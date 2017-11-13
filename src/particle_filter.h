@@ -10,6 +10,7 @@
 #define PARTICLE_FILTER_H_
 
 #include "helper_functions.h"
+#include <vector>
 
 struct Particle {
 
@@ -88,7 +89,7 @@ public:
 	 * @param observations Vector of landmark observations
 	 * @param map Map class containing map landmarks
 	 */
-	void updateWeights(double sensor_range, double std_landmark[], const std::vector<LandmarkObs> &observations,
+	void updateWeights(double sensor_range, double std_landmark[], std::vector<LandmarkObs> &observations,
 			const Map &map_landmarks);
 	
 	/**
