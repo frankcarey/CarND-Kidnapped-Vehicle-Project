@@ -50,10 +50,9 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 
 	for (int i=0; i<particles.size(); i++) {
 		Particle p = particles[i];
-		printf("\nPOST Init particle: id: %d | x: %f | y: %f | theta: %f |\n\n", p.id, p.x, p.y, p.theta);
 	}
 
-	cout << "Initialized";
+	cout << "Initialized.." << endl;
 	is_initialized = true;
 
 }
@@ -63,24 +62,49 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	// NOTE: When adding noise you may find std::normal_distribution and std::default_random_engine useful.
 	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 	//  http://www.cplusplus.com/reference/random/default_random_engine/
-	printf("\n Prediction.. \n");
 
-	// Setup generators to add gaussian noise.
+	// This predicts the new locations of the particles given the model of the car, previous measurements, and change in time
+	// since the last prediction.
+
+	// Use a psedo random number generator
 	default_random_engine gen;
-	normal_distribution<double> dist_noise_x(0, std_pos[0]);
-	normal_distribution<double> dist_noise_y(0, std_pos[1]);
-	normal_distribution<double> dist_noise_theta(0, std_pos[2]);
 
-	for (int i=0; i<num_particles; i++) {
-		if (fabs(yaw_rate) < 0.00001){ //Yawrate zero case Handle
-			particles[i].x += velocity * delta_t*cos(particles[i].theta);
-			particles[i].y += velocity * delta_t*sin(particles[i].theta);
+	// Depending if yaw rate is near zero, we need to use different set of equations to predict the x,y positions
+	// and heading angle which is yaw angle theta to avoid a division by zero error.
+	for (int i = 0; i < num_particles; ++i) {
+		if (fabs(yaw_rate) < 0.0000001)
+		{
+			// Add random gaussian noise for x position
+			double x_pred = particles.at(i).x + (velocity * delta_t * cos(particles.at(i).theta));
+			normal_distribution <double> dist_x_pred(0, std_pos[0]);
+			particles.at(i).x = x_pred + dist_x_pred(gen);
+
+			// Add random gaussian noise for y position
+			double y_pred = particles.at(i).y + (velocity * delta_t * sin(particles.at(i).theta));
+			normal_distribution <double> dist_y_pred(0, std_pos[1]);
+			particles.at(i).y = y_pred +  dist_y_pred(gen);
+
+			// No need to update theta since yaw rate is zero.
+		} else {
+			// Add random gaussian noise for x position.
+			double x_pred = particles.at(i).x + (velocity/yaw_rate)*(sin((particles.at(i).theta) + (yaw_rate * delta_t)) - (sin(particles.at(i).theta)));
+			normal_distribution <double> dist_x_pred(0, std_pos[0]);
+			particles.at(i).x = x_pred + dist_x_pred(gen);
+
+			// Add random gaussian noise for y position.
+			double y_pred = particles.at(i).y + (velocity / yaw_rate)*((cos(particles.at(i).theta)) - (cos(particles.at(i).theta + (yaw_rate * delta_t))));
+			normal_distribution <double> dist_y_pred(0, std_pos[1]);
+			particles.at(i).y = y_pred +  dist_y_pred(gen);
+			double theta_pred = particles.at(i).theta + ((yaw_rate * delta_t));
+
+			// Add random gaussian noise for theta
+			normal_distribution <double> dist_theta_pred(0, std_pos[2]);
+			particles.at(i).theta = theta_pred + dist_theta_pred(gen);
+
 		}
-		particles[i].x += ((velocity / yaw_rate) * (sin(particles[i].theta + yaw_rate * delta_t) - sin(particles[i].theta))) + dist_noise_x(gen);
-		particles[i].y += ((velocity / yaw_rate) * (cos(particles[i].theta) - cos(particles[i].theta) + yaw_rate * delta_t)) + dist_noise_y(gen);
-		particles[i].theta += ((yaw_rate * delta_t) + dist_noise_theta(gen));
-		printf("\nprediciton particle: id: %d | x: %f | y: %f | theta: %f |\n\n", particles[i].id, particles[i].x, particles[i].y, particles[i].theta);
 	}
+
+
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
@@ -88,6 +112,8 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//   observed measurement to this particular landmark.
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to
 	//   implement this method and use it as a helper during the updateWeights phase.
+
+	// NOTE: Observations MUST be previously converted to mapCordinates.
 
 	for (int sensorCount = 0; sensorCount < observations.size(); ++sensorCount)
 	{
@@ -232,9 +258,10 @@ void ParticleFilter::resample() {
 	std::discrete_distribution<> d(weights.begin(), weights.end());
 	std::map<int, int> m;
 	for (int n = 0; n<num_particles; ++n) {
-		resampled_particles.push_back(particles[d(gen)]);
+		Particle p = particles[d(gen)];
+		resampled_particles.push_back(p);
+		//printf("\nPOST Init particle: id: %d | x: %f | y: %f | theta: %f |\n\n", p.id, p.x, p.y, p.theta);
 	}
-
 	particles = resampled_particles;
 }
 
