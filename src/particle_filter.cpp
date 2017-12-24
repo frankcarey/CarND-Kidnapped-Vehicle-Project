@@ -102,110 +102,78 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
-	printf("\n updateWeights.. \n");
-	std::vector<LandmarkObs> landmarks;
-	std::vector<LandmarkObs> txObservations;
 
-	Map::single_landmark_s lm;
+	std::vector<LandmarkObs> transformed_obs;
 
-	// Convert observations to the car's coordinate system.
-	for(int p_idx=0; p_idx< particles.size(); p_idx++) {
+	// loop through each particle to calculate its weight
+	for (int ii = 0; ii < num_particles; ++ii)
+	{
+		double weight_for_each_particle = 1.0;
 
-		int    p_id = particles[p_idx].id;
-		double p_x = particles[p_idx].x;
-		double p_y = particles[p_idx].y;
-		double p_theta = particles[p_idx].theta;
+		// set size of transformed observations vector
+		transformed_obs.resize(observations.size());
+		//cout << "Transformations :" << endl;
+		// for each observation from sensor,convert it to map coordinates
+		for (int sensorCount = 0; sensorCount < observations.size(); ++sensorCount)
+		{
+			// transform each sensor measurement ,which is in local(car) coordinates to global(map) coordinates
+			/*
+			//	Equation to transform car coordinates to map coordinates
+			//	|Xmap| = |cos(theta)  -sin(theta)   Xparticle |      | Xcar |
+			//	|Ymap| = |sin(theta)   cos(theta)   Yparticle |   X  | Ycar |
+			//	|  1 | = |    0             0            1    |      |   1  |
+			//
+			//	*/
+			// use above equation for each sensor to transform observations
+			transformed_obs[sensorCount].x = particles.at(ii).x + (cos(particles.at(ii).theta) * (observations[sensorCount].x)) - (sin(particles.at(ii).theta) * (observations[sensorCount].y));
+			transformed_obs[sensorCount].y = particles.at(ii).y + (sin(particles.at(ii).theta) * (observations[sensorCount].x)) + (cos(particles.at(ii).theta) * (observations[sensorCount].y));
 
-
-		printf("\nParticle: id: %d | x: %f | y: %f | theta: %f | \n\n", p_id, p_x, p_y, p_theta);
-
-
-		txObservations.clear();
-		double weight = 1.;
-
-		for(int obs_idx=0; obs_idx < observations.size(); obs_idx++) {
-			printf("\n\tObservations (car space): x: %f | y: %f | \n", observations[obs_idx].x, observations[obs_idx].y);
-
-			LandmarkObs tx_obs;
-			// Convert observations back from Particle space to Global Space.
-			tx_obs.x = cos(p_theta) * observations[obs_idx].x - sin(p_theta) * observations[obs_idx].y + p_x;
-			tx_obs.y = sin(p_theta) * observations[obs_idx].x + cos(p_theta) * observations[obs_idx].y + p_y;
-			tx_obs.id = observations[obs_idx].id;
-			printf("\t             (world space): x: %f | y: %f | \n", tx_obs.x, tx_obs.y);
-			txObservations.push_back(tx_obs);
+			//cout << "observation: (" << observations[sensorCount].x <<" " << observations[sensorCount].y << ") --->" <<
+			//	"transfomed_obs: (" << transformed_obs[sensorCount].x << " " << transformed_obs[sensorCount].y << ")" << endl;
 		}
 
-    // Get all landmarks that should be within range of the sensor.
-		landmarks.clear();
-		for ( int lm_idx=0; lm_idx< map_landmarks.landmark_list.size();lm_idx++) {
-			lm = map_landmarks.landmark_list[lm_idx];
-			if (true || dist(lm.x_f, lm.y_f, p_x, p_y) <= sensor_range) {
-				landmarks.push_back(LandmarkObs{lm.id_i, lm.x_f, lm.y_f});
-			}
-		}
-
-		dataAssociation(landmarks,txObservations);
-		vector<double> sense_x;
-    vector<double> sense_y;
-		vector<int> associations;
+		//cout << "Data associations :" << endl;
+		// apply data association for each sensor measurement and create a predicted vector for each sensor measurement
+		dataAssociation(predicted, transformed_obs, map_landmarks);
 
 
-		for(int obs_idx=0; obs_idx < txObservations.size(); obs_idx++) {
-			int lm_id;
-			double lm_x;
-			double lm_y;
 
-			// Find the landmark associated with the Observation.
-			for (int lm_idx=0; lm_idx < landmarks.size(); lm_idx++) {
-				if (landmarks[lm_idx].id == txObservations[obs_idx].id ) {
-					lm_id = landmarks[lm_idx].id;
-					lm_x = landmarks[lm_idx].x;
-					lm_y = landmarks[lm_idx].y;
-					sense_x.push_back(lm_x);
-					sense_y.push_back(lm_y);
-					associations.push_back(lm_id);
-					printf("\tClosest LM (world space): closest_lm_id: %d | x: %f | y: %f | \n", lm_id, lm_x, lm_y);
-					break;
-				}
-			}
 
-			double d_x = lm_x - txObservations[obs_idx].x;
-			double d_y = lm_y - txObservations[obs_idx].y;
+		// calculate weight using multivariate gaussian probability distribution
+		for (int ii = 0; ii < observations.size(); ++ii)
+		{
+			/* start process of assigning weights to each particle
+			using multivariate gaussian probability distribution*/
 
+			// retrieve landmark x and y position associated with ith sensor
+			// measurement based on the index that is stored in predicted vector
+			int associated_index = predicted[ii].id;
+
+			// retrieve the x and y positions of the landmark
+			double x_landmark = map_landmarks.landmark_list[associated_index-1].x_f;
+			double y_landmark = map_landmarks.landmark_list[associated_index-1].y_f;
+
+
+			// calculate normalizer
 			double gauss_norm = (1 / (2 * M_PI * std_landmark[0] * std_landmark[1]));
-			double exponent= (d_x*d_x)/(2 * std_landmark[0]*std_landmark[0]) + (d_y*d_y)/(2 * std_landmark[1] * std_landmark[1]);
-			weight *= gauss_norm * exp(-exponent);
-			cout << "\t       weight: " << weight << "\n\n";
+
+			//calculate the exponent
+			double exponent = ((pow(predicted[ii].x - x_landmark,2))/(2 * pow(std_landmark[0],2))) +
+												((pow(predicted[ii].y - y_landmark, 2)) / (2 * pow(std_landmark[1], 2)));
+
+			weight_for_each_particle = weight_for_each_particle * gauss_norm * exp(-exponent);
 
 		}
 
-
-//		for(int lm_idx=0; lm_idx < map_landmarks.landmark_list.size(); lm_idx++) {
-//			// Convert global coordinates to coordinates in Particle Space.
-//			predicted.push_back(LandmarkObs{
-//					map_landmarks.landmark_list[lm_idx].id_i,
-//					map_landmarks.landmark_list[lm_idx].x_f - particles[p_idx].x,
-//					map_landmarks.landmark_list[lm_idx].y_f - particles[p_idx].y}
-//			);
-//		}
-
-//		cos_theta = cos(particles[p_idx].theta);
-//		sin_theta = sin(particles[p_idx].theta);
-//		vector<int> associations;
-//		vector<double> sense_x;
-//		vector<double> sense_y;
-//
-//		dataAssociation(predicted, observations);
-//		double weight = 1;
-
-
-		particles[p_idx] = SetAssociations(particles[p_idx], associations, sense_x, sense_y);
-		// Update this particles weight.
-		particles[p_idx].weight = weight;
-		// Add to the list of all of the particle weights for use later.
-		weights[p_idx] = weight;
-
+		particles.at(ii).weight = weight_for_each_particle;
+		weights.at(ii) = weight_for_each_particle;
+		//	cout << "Weights:" << endl;
+		//cout << "Weight of particle :" << weights.at(ii) << endl;
 	}
+
+
+
+
 }
 
 void ParticleFilter::resample() {
