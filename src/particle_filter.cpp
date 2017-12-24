@@ -212,17 +212,17 @@ void ParticleFilter::resample() {
 	// TODO: Resample particles with replacement with probability proportional to their weight. 
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
-	std::default_random_engine gen;
-	std::discrete_distribution<> resample_dist(weights.begin(), weights.end());
-	std::vector<Particle> new_particles;
-	new_particles.clear();
-	for(int n=0; n<num_particles; ++n) {
-		Particle p = particles[resample_dist(gen)];
-		p.id=n;
-		new_particles.push_back(p);
+	std::vector<Particle> resampled_particles;
+	resampled_particles.clear();
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::discrete_distribution<> d(weights.begin(), weights.end());
+	std::map<int, int> m;
+	for (int n = 0; n<num_particles; ++n) {
+		resampled_particles.push_back(particles[d(gen)]);
 	}
-	// Override the old particles with the new.
-	particles = std::move(new_particles);
+
+	particles = resampled_particles;
 }
 
 Particle ParticleFilter::SetAssociations(Particle particle, std::vector<int> associations, std::vector<double> sense_x, std::vector<double> sense_y)
